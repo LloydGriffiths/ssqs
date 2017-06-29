@@ -2,8 +2,6 @@
 package ssqs
 
 import (
-	"fmt"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/sqs"
@@ -35,22 +33,13 @@ type Queue struct {
 	VisibilityTimeout int64
 }
 
-// DeleteError is returned when there's an error deleting a message.
-type DeleteError struct {
-	Message *Message
-}
-
-func (de *DeleteError) Error() string {
-	return fmt.Sprintf("error deleting message: %s", de.Message.ID)
-}
-
 // New creates and returns a consumer.
 func New(q *Queue) *Consumer {
 	return &Consumer{
 		client:   sqs.New(session.New(), &aws.Config{Region: &q.Region}),
-		finish:   make(chan struct{}),
-		Errors:   make(chan error),
-		Messages: make(chan *Message),
+		finish:   make(chan struct{}, 1),
+		Errors:   make(chan error, 1),
+		Messages: make(chan *Message, 1),
 		Queue:    q,
 	}
 }
@@ -61,24 +50,19 @@ func (c *Consumer) Close() {
 }
 
 // Delete deletes a message from the queue.
-func (c *Consumer) Delete(m *Message) {
+func (c *Consumer) Delete(m *Message) error {
 	input := &sqs.DeleteMessageInput{
 		QueueUrl:      &c.Queue.URL,
 		ReceiptHandle: &m.Receipt,
 	}
-
 	if _, err := c.client.DeleteMessage(input); err != nil {
-		c.Errors <- &DeleteError{m}
-		return
+		return err
 	}
+	return nil
 }
 
 // Start starts a consumer.
 func (c *Consumer) Start() {
-	go c.consume()
-}
-
-func (c *Consumer) consume() {
 	input := &sqs.ReceiveMessageInput{
 		AttributeNames:    []*string{&c.Queue.Name},
 		QueueUrl:          &c.Queue.URL,
@@ -102,7 +86,6 @@ func (c *Consumer) receive(input *sqs.ReceiveMessageInput) {
 		c.Errors <- err
 		return
 	}
-
 	for _, v := range r.Messages {
 		c.Messages <- &Message{Body: *v.Body, ID: *v.MessageId, Receipt: *v.ReceiptHandle}
 	}
