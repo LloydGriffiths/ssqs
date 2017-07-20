@@ -8,6 +8,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 )
 
+// DefaultClient returns a new SQS client.
+var DefaultClient = func(q *Queue) sqsiface.SQSAPI {
+	return sqs.New(session.New(), &aws.Config{Region: &q.Region})
+}
+
 // Consumer represents a consumer.
 type Consumer struct {
 	client   sqsiface.SQSAPI
@@ -36,7 +41,7 @@ type Queue struct {
 // New creates and returns a consumer.
 func New(q *Queue) *Consumer {
 	return &Consumer{
-		client:   sqs.New(session.New(), &aws.Config{Region: &q.Region}),
+		client:   DefaultClient(q),
 		finish:   make(chan struct{}, 1),
 		Errors:   make(chan error, 1),
 		Messages: make(chan *Message, 1),
